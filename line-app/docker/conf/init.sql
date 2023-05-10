@@ -1,0 +1,1 @@
+CREATE DATABASE IF NOT EXISTS `line_app_test`;
