@@ -1,0 +1,123 @@
+package handlers
+
+import (
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+
+	"github.com/gorilla/mux"
+	"github.com/shota-imoto/line-app/lib/models/app_user"
+	"github.com/shota-imoto/line-app/lib/models/line_model"
+	"github.com/shota-imoto/line-app/lib/service/line_service"
+	"github.com/shota-imoto/line-app/lib/utils/line"
+	"github.com/shota-imoto/line-app/src/server/middleware"
+	"github.com/shota-imoto/line-app/src/server/supports"
+)
+
+type RegisterGroupResponse struct {
+	Group line_model.LineGroup `json:"group"`
+}
+
+func RegisterGroups(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("RegisterGroups")
+	user := r.Context().Value(middleware.AuthorizationUserKey).(app_user.User)
+
+	// ユーザーがグループに所属しているか確認する
+	reqBody, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+
+	if user.LineId == "" {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+
+	client := line.CheckMenberClient{UserId: user.LineId}
+	err = json.Unmarshal(reqBody, &client)
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+	_, err = client.Do()
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+	// ラインデータベース上からグループ情報を取得する
+	group, err := line_service.FindOrCreateGroupByGroupId(client.GroupId)
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+
+	line_service.JoinGroup(group, user)
+
+	response := RegisterGroupResponse{group}
+	response_json, err := json.Marshal(response)
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+	w.Write(response_json)
+	w.WriteHeader(200)
+}
+
+type GetListGroupsResponse struct {
+	Groups []line_model.LineGroup `json:"groups,array"`
+}
+
+func GetListGroups(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(middleware.AuthorizationUserKey).(app_user.User)
+	groups, err := line_service.GetListGroups(user)
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+
+	response := GetListGroupsResponse{groups}
+	response_json, err := json.Marshal(response)
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+	w.Write(response_json)
+	w.WriteHeader(200)
+}
+
+type GetGroupRequest struct {
+	GroupId int
+}
+
+func GetGroup(w http.ResponseWriter, r *http.Request) {
+	user := r.Context().Value(middleware.AuthorizationUserKey).(app_user.User)
+	vars := mux.Vars(r)
+
+	group, err := line_service.GetGroup(user, vars["id"])
+
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+
+	response, err := json.Marshal(group)
+	if err != nil {
+		supports.ErrorHandler(w, r, err)
+		return
+	}
+
+	w.Write(response)
+}
